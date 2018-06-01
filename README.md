@@ -4,7 +4,7 @@ It's that simple.
 Just a bootloader.
 
 
-¯\\_(ツ)_/¯ 
+¯\\__(ツ)__/¯ 
 
 
 Oh, and it is worth noting a couple of things.
