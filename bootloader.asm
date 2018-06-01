@@ -87,10 +87,6 @@ foundstart:
             jmp .foundfile
             jmp $
         .success:
-            push si
-            mov si, successmsg
-            call print
-            pop si
             jmp .cpstuff
             .cpstuff:
                 mov ax, si
@@ -172,8 +168,6 @@ HDDDriveNumber db 0x80
 WelcomeMessage db "LilakOS Hard Drive Image for Bochs(x86)", 0x0A, 0x0D, 0x0
 Filename db "/boot/stage2.LEF", 0x00
 Filesize db 17
-successmsg db "Success!", 0x0
-failmsg db 0x0A, 0x0D, 0x0A, 0x0D, "Catastrophic Faileure!!!",0x0A, 0x0D, 0x0A, 0x0D, 0x00
 tempLocal: dq 0x0000
 times 510-($-$$) db 0x00
 db 0x55
