@@ -10,7 +10,7 @@ dd if=boot.bin of=LilakOS.img bs=512 seek=0 conv=notrunc
 dd if=stage2.bin of=LilakOS.img bs=512 seek=1 conv=notrunc
 dd if=staticindex.bin of=LilakOS.img bs=512 seek=2097151 conv=notrunc
 
-ndisasm boot.bin>bootloader.dis
-ndisasm stage2>stage2.dis
+#ndisasm boot.bin>bootloader.dis
+#ndisasm stage2>stage2.dis
 
 echo "Done!"
