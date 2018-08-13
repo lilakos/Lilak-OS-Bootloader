@@ -15,164 +15,129 @@
 [ORG 0x7C00]
 
 jmp main
-
 main:
     cli
-    mov ax, 0x7C00
-    mov gs, ax
-    mov fs, ax
-
     xor ax, ax
-    mov es, ax
+    mov ds, ax
     mov ss, ax
-    mov sp, 0x9C00
-    
-    sti
-    
-    mov [HDDDriveNumber], dl
 
-    mov si, WelcomeMessage
+    mov sp, 0x9C00
+
+    cld
+    sti
+
+    mov si, msg
     call print
 
-    call readindex
-
-    jmp $
-
-readindex:
-    mov ax, 0x00
-    mov ds, ax
+    mov si, IndexDAP
     mov ah, 0x42
     mov dl, 0x80
-    mov si, IndexDAP
-    
+
     int 0x13
-    
-    mov ax, 0x500
-    mov si, ax
-    findstartloop:
+
+    mov si, 0x500
+
+    loop1:
         lodsb
         cmp al, 0x02
-        je foundstart
-        jmp findstartloop
-    cli
-    hlt
-    jmp $
-
-foundstart:
-    mov ax, si
-    add ax, 0x3F
-    mov si, ax
-    isfile?:
+        je loop2
+        jmp loop1
+    loop2:
         lodsb
         cmp al, 0x12
-        je .foundfile
-        jmp foundstart
-        .foundfile:
-            mov ax, si
-            add ax, 0x21
-            mov si, ax
-            mov di, Filename
-            mov cx, 17
-            rep cmpsb
-            je .success
-            jmp .faileure
-            cli
-            hlt
-            jmp $
-        .faileure:
-            mov ax, si
-            add ax, cx
-            add ax, 0xE
-            mov si, ax
-            jmp .foundfile
-            jmp $
-        .success:
-            jmp .cpstuff
-            .cpstuff:
-                mov ax, si
-                sub ax, 0x29
-                mov si, ax
-                mov bx, Location
-                mov di, bx
-                mov cx, 0x07
-                rep movsb
-                inc si
-                mov bx, tempLocal
-                mov di, bx
-                mov cx, 0x07
-                rep movsb
-                
-                mov si, Location
-                lodsw
+        je foundfile
+        jmp loop2
+    foundfile:
+        lodsb
+        mov [content], al
 
-                mov bx, ax
+        cmp al, 0x1
+        jne loop2
 
-                mov si, tempLocal
-                lodsw
+        add si, 0x20
 
-                sub ax, bx
+        mov di, FileName
 
-                mov [size], ax
+        mov cx, [FileNameSize]
 
-                jmp .readfile
-            .readfile:
-                mov ax, 0x00
-                mov ds, ax
-                mov ah, 0x42
-                mov dl, 0x80
-                mov si, FileDAP
-                
-                int 0x13
+        rep cmpsb
+        je success
+        jmp foundfileerr
+    success:
+        push si
+        mov si, smsg
+        call print
+        xor si, si
+        pop si
+        sub si, 0x3D
+        lodsw
+        mov [FileLocation], ax
+        
+        add si, 0x06
+        lodsw
 
-                jmp .executefile
+        mov [FileLimit], ax
 
-            .executefile:
-                jmp 0x1000
-                cli
-                hlt
-                jmp $
+        mov bx, [FileLocation]
+
+        sub bx, ax
+
+        mov [FileSize], ax
+
+        mov si, FileDAP
+        xor ax, ax
+        mov ah, 0x42
+        mov dl, 0x80
+
+        int 0x13
+
+        jmp 0x1000
+
+        jmp $
+    foundfileerr:
+        add si, cx
+        push si
+        mov si, fmsg
+        call print
+        xor si, si
+        pop si
+        jmp loop2
+        jmp $
+    jmp $
 
 print:
     lodsb
     or al, al
-    jz exit
+    jz .done
     mov ah, 0xE
     int 0x10
     jmp print
-
-waitfkb:
-    xor ax, ax
-    int 0x16
-    ret
-
-
-exit:
+.done:
     ret
 
 IndexDAP:
     db 0x10
-    db 0
-    dw 1
-    dd 0x500
-    dq 0x1FFFFF
+    db 0x00
+    dw 0x01
+    dw 0x0500
+    dw 0x0000
+    dq 0x003FFFFF
 
 FileDAP:
     db 0x10
     db 0x00
-    size: dw 0x00
-    dd 0x1000
-    Location: dq 0x0
+    FileSize dw 0x03
+    dw 0x1000
+    dw 0x0000
+    FileLocation dq 0x00
 
-
-HDDDriveNumber db 0x80
-WelcomeMessage db "LilakOS Hard Drive Image for Bochs(x86)", 0x0A, 0x0D, 0x0
-Filename db "/boot/stage2.LEF", 0x00
-Filesize db 17
-tempLocal: dq 0x0000
+content db 0x00
+smsg db 'Success', 0x0A, 0x0D, 0x00
+fmsg db 'Faileure', 0x0A, 0x0D, 0x00
+msg db 'Hello, World!', 0x0A, 0x0D, 0x00
+FileName db "/LilakOS/Bootstuff/stage2/stage2.LBF", 0x00
+FileNameSize dw 0x25
+FileLimit dw 0x00
 times 510-($-$$) db 0x00
 db 0x55
 db 0xAA
-
-;This is the first time in a while I have
-;felt genuinly happy about finishing a
-;project, because this was actually hard!
