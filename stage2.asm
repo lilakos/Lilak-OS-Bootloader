@@ -8,141 +8,56 @@
 [ORG 0x1000]
 
 jmp main
-
 main:
-    cli
-    mov ds, ax
-    mov es, ax
-    mov bx, 0x8000
-
-    mov ss, bx
-    mov sp, ax
-
-    mov si, S2Hello
+    mov si, HelloMSG
     call print
-    
-    call gexec
 
-    mov si, GotExecMsg
-    call print
+    call MemoryDetection
+
+    call readfile
 
     cli
     call EnableA20
     cli
     pusha
-	lgdt[gdtr]
-    sti
-    mov si, A20SuccessMsg
-    call print
-    xor ax, ax
-    int 0x16
-    mov si, GDTMsg
-    call print
-    xor ax, ax
-    int 0x16
-    cli
-    
+    lgdt[gdtr]
+
     mov eax, cr0
     or al, 1
     mov cr0, eax
 
     jmp 0x08:Stage3
 
-    cli
-    hlt
-
     jmp $
 
-;Subroutines:
+MemoryDetection:
+    xor cx, cx
+    xor dx, dx
+    mov ax, 0xE801
+    int 0x15
+    jc .err
+    cmp ah, 0x86
+    je short .err
+    cmp ah, 0x80
+    je short .err
+    jcxz .useax
 
-;Mini FS "Driver"
-gexec:
-    mov si, 0x500
-    jmp findstartloop
-    findstartloop:
-        lodsb
-        cmp al, 0x02
-        je foundstart
-        jmp findstartloop
-    cli
-    hlt
-    jmp $
+    mov ax, cx
+    mov bx, dx
 
-foundstart:
-    add si, 0x3F
-    isfile?:
-        lodsb
-        cmp al, 0x12
-        je .foundfile
-        jmp foundstart
-        .foundfile:
-            add si, 0x21 
-            mov di, Filename
-            mov cx, 29 ;0x21 + 29 = 62
-            rep cmpsb
-            je .success
-            jmp .faileure
-            cli
-            hlt
-            jmp $
-        .faileure:
-            add si, cx
-            add si, 0x2 ;62 + 0x02 = 64 
-            jmp .foundfile
-            jmp $
-        .success:
-            jmp .cpstuff
-            .cpstuff:
-                sub si, 0x35 ;62 - 0x35 = 0x09
-                mov bx, Location
-                mov di, bx
-                mov cx, 0x07 ;8 bytes
-                rep movsb
-                inc si
-                mov bx, tempLocal
-                mov di, bx
-                mov cx, 0x07 ;8 bytes
-                rep movsb
-                
-                mov si, Location
-                lodsw
-
-                mov bx, ax
-
-                mov si, tempLocal
-                lodsw
-
-                sub ax, bx
-
-                mov [size], ax
-
-                jmp .readfile
-            .readfile:
-                mov ax, 0x00
-                mov ds, ax
-                mov ah, 0x42
-                mov dl, 0x80
-                mov si, FileDAP
-                
-                int 0x13
-
-                ret
-
-;Print
-
-print:
-    lodsb
-    or al, al
-    jz exit
-    mov ah, 0x0E
-    int 0x10
-    jmp print
-
-exit:
+.useax:
+    mov [tempcx], ax
+    mov [tempdx], bx
+    xor ax, ax
+    xor bx, bx
+    xor cx, cx
+    xor dx, dx
+    xor si, si
+    xor di, di
     ret
 
-;A20 Code
-
+.err:
+    int 0x16
 
 EnableA20:
 	pushad
@@ -174,10 +89,7 @@ A20NoBios:
 	call CheckA20
 	jc A20Enabled
 A20Fail:
-	mov si, A20FaileureMsg
-	call print
-	cli
-	hlt
+	jmp $
 FastA20:
 	in al, 0x92
 	test al, 2
@@ -187,8 +99,7 @@ FastA20:
 	out 0x92, al
 	call CheckA20
 	jc A20Enabled
-	cli
-	hlt
+	jmp $
 A20KB:
 	cli
 	mov cx, 50
@@ -246,21 +157,82 @@ A20isenabled:
 	stc
 	jmp CheckA20Ret
 
-;File DAP for INT 13h AH=0x42
+readfile:
+    mov dx, 0x80
+    mov si, 0x800
+    loop1:
+        lodsb
+        cmp al, 0x02
+        je loop2
+        jmp loop1
+    loop2:
+        lodsb
+        cmp al, 0x12
+        je foundfile
+        jmp loop2
+    foundfile:
+        lodsb
+        cmp al, 0x1
+        jne loop2ex
+        add si, 0x20
+        mov di, Filename
+        mov cx, 0x21
+        rep cmpsb
+        
+        je success
+        jmp loop2
+    success:
+        std
+        loop3:
+            lodsb
+            cmp al, 0x12
+            je success2
+            jmp success
+        success2:
+            cld
+            add si, 0xB
+            mov di, Location
+            mov cx, 0x8
+
+            rep movsb
+            lodsw
+            mov bx, [Location]
+
+            sub ax, bx
+
+            mov [Size], ax
+
+            mov si, FileDAP
+            xor ax, ax
+            mov ds, ax
+            mov ah, 0x42
+            int 0x13
+
+            ret
+        loop2ex:
+            add si, 0x20
+            jmp loop2
+
+print:
+    lodsb
+    or al, al
+    jz .exit
+    mov ah, 0x0E
+    int 0x10
+    jmp print
+
+.exit:
+    ret
 
 FileDAP:
     db 0x10
     db 0x00
-    size: dw 0x00
-    dd 0x2000
-    Location: dq 0x0
+    Size dw 0x00
+    dw 0x2000
+    dw 0x0000
+    Location dq 0x00
 
-;
-;Pretty Standard GDT setup for right now, i'd say
-;
-
-
-gdt_data: 
+GDT: 
 	dd 0                
 	dd 0 
 
@@ -282,12 +254,10 @@ gdt_data:
 	
 end_of_gdt:
 gdtr: 
-	dw end_of_gdt - gdt_data - 1
-	dd gdt_data
-
+	dw end_of_gdt - GDT - 1
+	dd GDT
 
 [BITS 32]
-
 Stage3:
     mov ax, 0x10
     mov ds, ax
@@ -295,32 +265,114 @@ Stage3:
     mov es, ax
     mov esp, 0x90000
 
-    mov edi, 0xB800
-    mov [edi], byte 'P';Protection
-    mov [edi+1], byte 0x7
+    mov eax, 0x464c457f
+    mov ebx, dword [0x2000]
 
-    mov [edi+2], byte 'E';Enabled
-    mov [edi+3], byte 0x7
-    
+    cmp eax, ebx
+    jne ERROR
+
+
+    xor esi, esi
+    xor edi, edi
+    xor ecx, ecx
+
     mov esi, 0x2000
-    mov edi, 0xFF000 ;My kernel has an offset of 0x1000, so this lets me load 
-    ;it at an offset.
-    mov ecx, tempSize
-    rep movsd
+    mov edi, 0xFF000
+    mov ecx, 40000
+    
+    rep movsb
+
+    xor ecx, ecx
+    xor edx, edx
+
+    mov eax, [tempcx]
+    mov ebx, 0x400
+
+    mul ebx
+
+    push eax
+
+    mov eax, [tempdx]
+    mov ebx, 0x10000
+
+    mul ebx
+
+    pop ebx
+
+    add eax, ebx
+
+    add eax, 0x100000
+
+    mov [HighMem], eax
+
+
+    mov esi, 0x2018
+    lodsb
+
+    push multibootInfo
+
     jmp 0x8:0x100000
 
+ERROR:
+    xor edi, edi
+    mov edi, 0xB8000
+    xor ecx, ecx
+    mov ecx, 4000 
+    xor ax, ax
+    clear:
+        mov [edi], word ax
+        inc edi
+        dec ecx
+        cmp ecx, 0
+        jz finished
+        jmp clear
+    finished:
+    xor edi, edi
+    mov edi, 0xB8000
+    mov [edi], word 0x8C45
+    mov [edi+2], word 0x8C52
+    mov [edi+4], word 0x8C52
+    mov [edi+6], word 0x8C4F
+    mov [edi+8], word 0x8C52
     jmp $
 
+tempcx dw 0x00
+tempdx dw 0x00
+
+multibootInfo:
+    Flags dd 00000000000000000000000000000001b
+    LowMem dd 0x00
+    HighMem dd 0x00
+    BootDevice dd 0x80
+    CmdLine dd 0x00
+    ModsCount dd 0x00
+    ModsAddr dd 0x00
+    Syms dd 0x00
+    Syms2 dd 0x00
+    Syms3 dd 0x00
+    MMapLength dd 0x00
+    MMapAddr dd 0x00
+    DrivesLength dd 0x400000
+    DrivesAddr dd 0x00
+    ConfigTable dd 0x00
+    BootloaderName dd BootName
+    APMTable dd 0x00
+    VBRControlInfo dd 0x00
+    VBEModeInfo dd 0x00
+    VBEMode dd 0x00
+    VBEInterfaceSeg dd 0x00
+    VBEInterfaceOff dd 0x00
+    VBEInterfaceLen dd 0x00
+    FrameBufferAddr dd 0x00
+    FrameBufferPitch dd 0x00
+    FrameBufferWidth dd 0x00
+    FrameBufferHeight dd 0x00
+    FrameBufferBPP dd 0x00
+    FrameBufferType dd 0x00
+    ColorInfo dd 0x00
+    ColorInfo2 db 0x00
 
 
-GotExecMsg db "Lilak OS Kernel Image loaded at memory location 0x2000", 0x0D, 0x0A, 0x00
-A20TestMsg db "Testing A20 . . . ", 0x0D, 0x0A, 0x00
-A20FaileureMsg db "A20 Line Enabled", 0x0D, 0x0A, 0x00
-A20SuccessMsg db "A20 Line Failed", 0x0D, 0x0A, 0x00
-GDTMsg db "GDT Set", 0x0D, 0x0A, 0x00
-Filename db "/boot/LilakOSKernelImage.LEF", 0x00
-S2Hello db 0x0D, 0x0A, "Stage 2!", 0x0D, 0x0A, 0x00
-tempLocal dq 0x0000
-tempSize dq 0x0000
-db "END", 0x00
-times 1024-($-$$) db 0x0
+BootName db 'LilakOS Bootloader', 0x0A, 0x0D, 0x00
+Filename db "/LilakOS/core/LOS32BitKernel.LEF", 0x00
+HelloMSG db 'Hello, stage 2!', 0x0A, 0x0D, 0x00
